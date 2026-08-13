@@ -1,5 +1,27 @@
 # Задание 2. Обновления ордеров через SignalR
 
+## 📋 Содержание
+
+- [Архитектура](#architecture)
+- [Состав решения](#solution-structure)
+- [Основные архитектурные решения](#design-decisions)
+  - [Идемпотентность](#idempotency)
+  - [Масштабирование и высокая нагрузка](#scalability)
+  - [Transactional Outbox](#outbox)
+  - [Retry и Circuit Breaker](#resilience)
+  - [Валидация и обработка ошибок](#validation)
+- [Ключевые фрагменты кода](#code-examples)
+- [Unit-тесты](#unit-tests)
+- [Локальный запуск](#local-run)
+  - [Windows / PowerShell](#windows-run)
+  - [Linux / WSL / Docker Compose](#linux-run)
+- [Ручное тестирование через UI](#manual-testing)
+  - [Позитивные сценарии](#positive-flow)
+  - [Негативные сценарии](#negative-flow)
+  - [Матрица проверок](#test-matrix)
+- [Ограничения решения](#limitations)
+
+<a id="architecture"></a>
 ## Архитектура
 
 ```mermaid
@@ -77,6 +99,7 @@ sequenceDiagram
 
 Направление зависимостей соответствует Clean Architecture: use case зависит от абстракций `IOrderStore` и `IOrderUpdateNotifier`, но ничего не знает об ASP.NET Core, SignalR или `IMemoryCache`. Внешние механизмы подключаются адаптерами. Для масштаба тестового задания границы оставлены в одном проекте: это сохраняет архитектуру без лишних assembly и boilerplate (KISS).
 
+<a id="solution-structure"></a>
 ## Состав решения
 
 - `OrdersController` — принимает `POST /api/orders` и передает операцию сервису;
@@ -88,6 +111,7 @@ sequenceDiagram
 - `OrderExpirationService` — периодически находит просроченные ордера и отменяет их;
 - `wwwroot/index.html` — минимальная страница ручной проверки.
 
+<a id="design-decisions"></a>
 ## Основные решения
 
 ### Пользователь определяется сервером
@@ -112,6 +136,7 @@ public sealed class OrdersHub : Hub<IOrderClient>
 
 Typed Hub дает compile-time проверку имен и аргументов клиентских методов. Строковые вызовы вида `SendAsync("ReceiveOrderUpdate", ...)` не используются.
 
+<a id="idempotency"></a>
 ### Идемпотентность
 
 Клиент передает стабильный `ClientOrderId`. Store атомарно выполняет `GetOrAdd` по ключу `(UserId, ClientOrderId)`. Поэтому параллельные или повторные HTTP-запросы создают ровно один ордер:
@@ -131,6 +156,7 @@ Typed Hub дает compile-time проверку имен и аргументо�
 - **KISS:** Redis используется только там, где он действительно нужен для межинстансной SignalR-доставки; бизнес-код не связан с конкретной инфраструктурой.
 - **Ошибки:** единый `IExceptionHandler` возвращает `ProblemDetails` с `traceId`; технические детали остаются в структурированных логах.
 
+<a id="scalability"></a>
 ### Высокая нагрузка и горизонтальное масштабирование
 
 Локальный Compose запускает два API-инстанса, Redis и Nginx. Redis backplane распространяет SignalR-сообщения между соединениями на разных инстансах. Для production приведен Kubernetes-манифест:
@@ -143,6 +169,7 @@ Typed Hub дает compile-time проверку имен и аргументо�
 
 Важно: `MemoryOrderStore` оставлен по прямому условию задания и пригоден только как локальная реализация. Для настоящего multi-instance production `IOrderStore` должен быть заменен Redis/SQL-адаптером с атомарным уникальным ключом `(UserId, ClientOrderId)`. SignalR backplane решает доставку сообщений, но сам по себе не делает process-local cache распределенным.
 
+<a id="outbox"></a>
 ### Transactional Outbox
 
 В production прямой вызов notifier после изменения состояния заменяется Outbox-потоком:
@@ -154,6 +181,7 @@ Outbox publisher → SignalR / message broker → mark processed
 
 `Order` и `OutboxMessage` сохраняются одной транзакцией. Отдельный bounded background worker читает сообщения пакетами, применяет retry с backoff и публикует их идемпотентно по `EventId`. Это исключает потерю события между сохранением ордера и SignalR-рассылкой. В текущем in-memory варианте настоящей транзакционной гарантии нет; добавление «псевдо-outbox» в память создало бы ложное ощущение надежности, поэтому граница явно обозначена интерфейсом notifier и описана как production persistence adapter.
 
+<a id="resilience"></a>
 ### Retry и Circuit Breaker
 
 Circuit breaker в текущем request path не добавлен намеренно. `OrderService`, memory store и `IHubContext` выполняются внутри процесса: breaker вокруг них не изолирует внешнюю неисправность, зато добавляет состояния, задержки и новые сценарии отказа. Единственная runtime-зависимость примера — Redis backplane. Для нее настроены штатные механизмы `StackExchange.Redis`: `AbortOnConnectFail = false`, три попытки первичного подключения, ограниченные connect/async timeouts и экспоненциальная политика переподключения. Это позволяет экземпляру пережить кратковременную недоступность Redis без каскада агрессивных повторов.
@@ -195,6 +223,7 @@ public bool TryCancel() => Interlocked.Exchange(ref _isActive, 0) == 1;
 
 SignalR и REST возвращают `OrderResponse`, а не изменяемую внутреннюю сущность. Контракт не раскрывает `UserId` и не зависит от способа хранения состояния.
 
+<a id="validation"></a>
 ### Валидация на каждом уровне
 
 1. **Transport:** DataAnnotations проверяют обязательность, длины, формат и числовые диапазоны. `[ApiController]` автоматически возвращает `400 ValidationProblemDetails`.
@@ -206,6 +235,7 @@ SignalR и REST возвращают `OrderResponse`, а не изменяему
 
 Создание, идемпотентный retry, отмена, подключение SignalR и исключения логируются через `ILogger` структурированными шаблонами. В поля логов попадают `OrderId`, `UserId`, `ClientOrderId`, `ConnectionId` и `TraceId`, а не склеенные строки.
 
+<a id="code-examples"></a>
 ## Ключевые фрагменты
 
 ### Hub
@@ -277,6 +307,7 @@ app.MapHub<OrdersHub>("/hub/orders");
 
 `OrderService` и store зарегистрированы как Singleton: состояние едино для REST, Hub и background worker. Эти классы не зависят от scoped-сервисов и разработаны для конкурентного использования.
 
+<a id="unit-tests"></a>
 ## Проверка
 
 Unit-тесты:
@@ -336,8 +367,10 @@ curl http://localhost:5000/api/orders/active -H "X-User-Id: demo-user"
 
 Для проверки групп нужно открыть две вкладки с одинаковым `User ID` и одну с другим. Первые две получат обновление, третья — нет.
 
+<a id="local-run"></a>
 ## Локальный запуск
 
+<a id="windows-run"></a>
 ### Windows — напрямую через .NET SDK
 
 Предварительно установить [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) и проверить `dotnet --info`. Redis при одиночном локальном запуске не требуется: без строки подключения SignalR работает внутри одного процесса.
@@ -353,6 +386,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 Открыть `http://localhost:5000`, Swagger — `http://localhost:5000/swagger`, health check — `http://localhost:5000/health`. Остановить приложение сочетанием `Ctrl+C`.
 
+<a id="linux-run"></a>
 ### Linux — Docker Compose
 
 Предварительно установить Docker Engine с Compose plugin и убедиться, что команды `docker --version` и `docker compose version` выполняются. Порт `8080` и Docker daemon должны быть доступны текущему пользователю.
@@ -374,6 +408,7 @@ docker compose down
 
 Для полного удаления тестового Redis volume используется `docker compose down --volumes`; эта команда удаляет сохраненные данные окружения.
 
+<a id="manual-testing"></a>
 ## Ручное тестирование
 
 Перед каждым прогоном запустить приложение одним из способов выше, открыть страницу проверки и DevTools браузера. Для Windows далее использовать `BASE_URL=http://localhost:5000`, для Compose — `BASE_URL=http://localhost:8080`. Сценарии идемпотентности, active list и автоотмены сначала выполнять на одном Windows-инстансе: заданный условием in-memory store не является общим для двух процессов. Compose проверяет балансировку и межинстансную SignalR-доставку; production-гарантии требуют общего SQL/Redis store.
@@ -389,6 +424,7 @@ docker compose down
 
 Базовый валидный набор: пользователь `demo-user`, symbol `AAPL`, price `225.50`, volume `10`. Срок автоотмены по умолчанию — 15 секунд.
 
+<a id="positive-flow"></a>
 ### Позитивный flow
 
 1. Открыть страницу приложения, указать `demo-user`, нажать `Connect`. Ожидание: соединение установлено, приходит `ReceiveInitialOrders` с пустым списком.
@@ -399,6 +435,7 @@ docker compose down
 6. Открыть вторую вкладку как `demo-user` и третью как `another-user`. Создать новый ордер первого пользователя. Ожидание: обе вкладки `demo-user` получают обновление, `another-user` — нет.
 7. Для Compose создать несколько ордеров с разными `clientOrderId`. Запросы проходят через Nginx к двум API-инстансам, а Redis доставляет SignalR-уведомления независимо от экземпляра, на котором находится WebSocket. Идемпотентность между инстансами этим вариантом не проверяется: она появится после замены memory store на общий persistence adapter с уникальным индексом.
 
+<a id="negative-flow"></a>
 ### Негативный flow
 
 Каждый сценарий выполнять с новым `clientOrderId`, если явно не сказано обратное:
@@ -413,6 +450,7 @@ docker compose down
 
 После негативных сценариев проверить `GET /api/orders/active` и журнал SignalR: отклоненные запросы не должны создавать ордера или события.
 
+<a id="test-matrix"></a>
 ### Матрица UI-проверок
 
 | Сценарий | Данные и действия | Ожидаемый HTTP-результат | Ожидаемый SignalR-результат |
@@ -429,6 +467,7 @@ docker compose down
 
 Критерий успешного негативного теста — не только правильный код ошибки. В журнале не должно появиться `Обновление ордера`, а после подключения/переподключения начальный список не должен содержать отклонённый ордер.
 
+<a id="limitations"></a>
 ## Ограничения in-memory варианта
 
 Решение соответствует условиям задания, но состояние теряется при перезапуске и не разделяется между несколькими экземплярами приложения. В production ордера хранятся в БД, обновление публикуется после фиксации транзакции через Outbox, а SignalR масштабируется через Redis backplane или Azure SignalR Service.
