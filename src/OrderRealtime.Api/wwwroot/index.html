@@ -30,7 +30,12 @@
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
-        body: JSON.stringify({ symbol: 'AAPL', price: 225.50, volume: 10 })
+        body: JSON.stringify({
+          clientOrderId: crypto.randomUUID(),
+          symbol: 'AAPL',
+          price: 225.50,
+          volume: 10
+        })
       });
       log({ rest: await response.json() });
     };

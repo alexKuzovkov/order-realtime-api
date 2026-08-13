@@ -5,28 +5,30 @@ namespace OrderRealtime.Api.Orders;
 
 public interface IOrderStore
 {
-    Order Add(Order order);
+    OrderAddResult GetOrAdd(Order order);
     IReadOnlyCollection<Order> GetActiveByUser(string userId);
     IReadOnlyCollection<Order> GetExpired(DateTimeOffset now, TimeSpan lifetime);
 }
+
+public sealed record OrderAddResult(Order Order, bool WasAdded);
 
 public sealed class MemoryOrderStore(IMemoryCache cache) : IOrderStore
 {
     private const string CacheKey = "active-orders";
 
-    private ConcurrentDictionary<Guid, Order> Orders => cache.GetOrCreate(
+    private ConcurrentDictionary<(string UserId, string ClientOrderId), Order> Orders => cache.GetOrCreate(
         CacheKey,
         entry =>
         {
             entry.Priority = CacheItemPriority.NeverRemove;
-            return new ConcurrentDictionary<Guid, Order>();
+            return new ConcurrentDictionary<(string, string), Order>();
         })!;
 
-    public Order Add(Order order)
+    public OrderAddResult GetOrAdd(Order order)
     {
-        if (!Orders.TryAdd(order.Id, order))
-            throw new InvalidOperationException($"Order {order.Id} already exists.");
-        return order;
+        var key = (order.UserId, order.ClientOrderId);
+        var stored = Orders.GetOrAdd(key, order);
+        return new OrderAddResult(stored, ReferenceEquals(stored, order));
     }
 
     public IReadOnlyCollection<Order> GetActiveByUser(string userId) => Orders.Values
