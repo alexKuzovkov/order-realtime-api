@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using OrderRealtime.Api.Authentication;
 using OrderRealtime.Api.Infrastructure;
 using OrderRealtime.Api.Orders;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +16,16 @@ builder.Services.AddSwaggerGen();
 var signalR = builder.Services.AddSignalR();
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrWhiteSpace(redisConnection))
-    signalR.AddStackExchangeRedis(redisConnection);
+{
+    var redisOptions = ConfigurationOptions.Parse(redisConnection);
+    redisOptions.AbortOnConnectFail = false;
+    redisOptions.ConnectRetry = 3;
+    redisOptions.ConnectTimeout = 5_000;
+    redisOptions.AsyncTimeout = 5_000;
+    redisOptions.ReconnectRetryPolicy = new ExponentialRetry(1_000);
+
+    signalR.AddStackExchangeRedis(options => options.Configuration = redisOptions);
+}
 builder.Services.AddMemoryCache();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -29,10 +39,14 @@ builder.Services.AddAuthentication(DemoAuthenticationHandler.SchemeName)
         DemoAuthenticationHandler.SchemeName, _ => { });
 builder.Services.AddAuthorization();
 
-builder.Services.Configure<OrderExpirationOptions>(
-    builder.Configuration.GetSection(OrderExpirationOptions.SectionName));
-builder.Services.Configure<OrderLimitsOptions>(
-    builder.Configuration.GetSection(OrderLimitsOptions.SectionName));
+builder.Services.AddOptions<OrderExpirationOptions>()
+    .BindConfiguration(OrderExpirationOptions.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddOptions<OrderLimitsOptions>()
+    .BindConfiguration(OrderLimitsOptions.SectionName)
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddSingleton<IOrderStore, MemoryOrderStore>();
 builder.Services.AddSingleton<IOrderUpdateNotifier, SignalROrderUpdateNotifier>();
 builder.Services.AddSingleton<IOrderBusinessValidator, OrderBusinessValidator>();

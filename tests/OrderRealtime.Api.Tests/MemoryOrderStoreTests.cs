@@ -17,7 +17,7 @@ public sealed class MemoryOrderStoreTests
 
         var result = store.GetActiveByUser("user-1");
 
-        Assert.Collection(result, order => Assert.Same(active, order));
+        Assert.Same(active, Assert.Single(result));
     }
 
     [Fact]
@@ -33,6 +33,6 @@ public sealed class MemoryOrderStoreTests
 
         var result = store.GetExpired(now, TimeSpan.FromSeconds(10));
 
-        Assert.Collection(result, order => Assert.Same(expired, order));
+        Assert.Same(expired, Assert.Single(result));
     }
 }

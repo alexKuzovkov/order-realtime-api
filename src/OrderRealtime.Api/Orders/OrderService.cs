@@ -81,5 +81,5 @@ public sealed class OrderService(
     }
 
     public IReadOnlyCollection<OrderResponse> GetActiveOrders(string userId) =>
-        store.GetActiveByUser(userId).Select(order => order.ToResponse()).ToArray();
+        [.. store.GetActiveByUser(userId).Select(order => order.ToResponse())];
 }

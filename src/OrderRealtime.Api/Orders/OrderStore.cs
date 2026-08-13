@@ -31,12 +31,10 @@ public sealed class MemoryOrderStore(IMemoryCache cache) : IOrderStore
         return new OrderAddResult(stored, ReferenceEquals(stored, order));
     }
 
-    public IReadOnlyCollection<Order> GetActiveByUser(string userId) => Orders.Values
-        .Where(order => order.IsActive && order.UserId == userId)
-        .ToArray();
+    public IReadOnlyCollection<Order> GetActiveByUser(string userId) =>
+        [.. Orders.Values.Where(order => order.IsActive && order.UserId == userId)];
 
     public IReadOnlyCollection<Order> GetExpired(DateTimeOffset now, TimeSpan lifetime) =>
-        Orders.Values
-            .Where(order => order.IsActive && now - order.CreatedAt >= lifetime)
-            .ToArray();
+        [.. Orders.Values.Where(order =>
+            order.IsActive && now - order.CreatedAt >= lifetime)];
 }

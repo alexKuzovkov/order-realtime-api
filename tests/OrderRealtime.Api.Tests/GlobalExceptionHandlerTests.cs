@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using OrderRealtime.Api.Infrastructure;
 using OrderRealtime.Api.Orders;
 
@@ -13,35 +12,30 @@ public sealed class GlobalExceptionHandlerTests
     [InlineData(typeof(IdempotencyConflictException), StatusCodes.Status409Conflict)]
     [InlineData(typeof(BusinessRuleValidationException), StatusCodes.Status422UnprocessableEntity)]
     [InlineData(typeof(UnauthorizedAccessException), StatusCodes.Status401Unauthorized)]
-    public async Task TryHandleAsync_MapsKnownExceptions(Type exceptionType, int expectedStatus)
+    public async Task TryHandleAsync_MapsKnownExceptions(
+        Type exceptionType,
+        int expectedStatus)
     {
-        ProblemDetails? written = null;
-        var writer = Substitute.For<IProblemDetailsService>();
-        writer.TryWriteAsync(Arg.Do<ProblemDetailsContext>(context =>
-                written = context.ProblemDetails))
-            .Returns(new ValueTask<bool>(true));
+        var writer = new CapturingProblemDetailsService();
         var handler = new GlobalExceptionHandler(
             writer, NullLogger<GlobalExceptionHandler>.Instance);
-        var exception = CreateException(exceptionType);
         var httpContext = new DefaultHttpContext();
 
         var handled = await handler.TryHandleAsync(
-            httpContext, exception, CancellationToken.None);
+            httpContext,
+            CreateException(exceptionType),
+            CancellationToken.None);
 
         Assert.True(handled);
         Assert.Equal(expectedStatus, httpContext.Response.StatusCode);
-        Assert.Equal(expectedStatus, written?.Status);
-        Assert.True(written?.Extensions.ContainsKey("traceId"));
+        Assert.Equal(expectedStatus, writer.Written?.Status);
+        Assert.True(writer.Written?.Extensions.ContainsKey("traceId"));
     }
 
     [Fact]
     public async Task TryHandleAsync_DoesNotExposeUnexpectedExceptionDetails()
     {
-        ProblemDetails? written = null;
-        var writer = Substitute.For<IProblemDetailsService>();
-        writer.TryWriteAsync(Arg.Do<ProblemDetailsContext>(context =>
-                written = context.ProblemDetails))
-            .Returns(new ValueTask<bool>(true));
+        var writer = new CapturingProblemDetailsService();
         var handler = new GlobalExceptionHandler(
             writer, NullLogger<GlobalExceptionHandler>.Instance);
 
@@ -50,15 +44,35 @@ public sealed class GlobalExceptionHandlerTests
             new InvalidOperationException("sensitive database details"),
             CancellationToken.None);
 
-        Assert.Equal(StatusCodes.Status500InternalServerError, written?.Status);
-        Assert.DoesNotContain("sensitive", written?.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(StatusCodes.Status500InternalServerError, writer.Written?.Status);
+        Assert.DoesNotContain(
+            "sensitive", writer.Written?.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Exception CreateException(Type type) => type.Name switch
     {
         nameof(IdempotencyConflictException) => new IdempotencyConflictException("key"),
-        nameof(BusinessRuleValidationException) => new BusinessRuleValidationException("invalid"),
-        nameof(UnauthorizedAccessException) => new UnauthorizedAccessException("unauthorized"),
+        nameof(BusinessRuleValidationException) =>
+            new BusinessRuleValidationException("invalid"),
+        nameof(UnauthorizedAccessException) =>
+            new UnauthorizedAccessException("unauthorized"),
         _ => throw new ArgumentOutOfRangeException(nameof(type))
     };
+
+    private sealed class CapturingProblemDetailsService : IProblemDetailsService
+    {
+        public ProblemDetails? Written { get; private set; }
+
+        public ValueTask WriteAsync(ProblemDetailsContext context)
+        {
+            Written = context.ProblemDetails;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<bool> TryWriteAsync(ProblemDetailsContext context)
+        {
+            Written = context.ProblemDetails;
+            return ValueTask.FromResult(true);
+        }
+    }
 }

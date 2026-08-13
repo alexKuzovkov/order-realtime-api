@@ -1,11 +1,17 @@
 using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
 
 namespace OrderRealtime.Api.Orders;
 
 public sealed class OrderLimitsOptions
 {
     public const string SectionName = "OrderLimits";
+
+    [Range(1, int.MaxValue)]
     public int MaxVolume { get; init; } = 100_000;
+
+    [Range(typeof(decimal), "0.01", "1000000000000",
+        ParseLimitsInInvariantCulture = true)]
     public decimal MaxNotional { get; init; } = 10_000_000m;
 }
 
