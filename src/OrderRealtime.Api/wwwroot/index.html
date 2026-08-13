@@ -1,16 +1,123 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><title>Orders SignalR check</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Проверка ордеров и SignalR</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #07111f;
+      color: #e6edf7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(37, 99, 235, .22), transparent 28rem),
+        radial-gradient(circle at 90% 85%, rgba(13, 148, 136, .16), transparent 30rem),
+        #07111f;
+    }
+    main { width: min(1120px, calc(100% - 2rem)); margin: 0 auto; padding: 3rem 0; }
+    header { margin-bottom: 2rem; }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -.04em; }
+    h2 { margin: 0; font-size: 1.1rem; }
+    .lead { max-width: 680px; margin: .7rem 0 0; color: #93a4ba; line-height: 1.6; }
+    .badge {
+      display: inline-flex; margin-bottom: 1rem; padding: .35rem .7rem; border: 1px solid #1e4f78;
+      border-radius: 999px; color: #7dd3fc; background: rgba(14, 116, 144, .12); font-size: .8rem;
+    }
+    .grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 1rem; }
+    .card {
+      margin: 0; padding: 1.25rem; border: 1px solid #1c2c42; border-radius: 16px;
+      background: rgba(13, 25, 43, .82); box-shadow: 0 18px 50px rgba(0, 0, 0, .22);
+      backdrop-filter: blur(12px); align-content: start;
+    }
+    fieldset { display: grid; gap: 1rem; min-width: 0; }
+    legend { padding: 0 .4rem; color: #c7d5e8; font-weight: 700; }
+    label { display: grid; gap: .45rem; color: #9fb0c7; font-size: .88rem; }
+    input {
+      width: 100%; padding: .72rem .8rem; border: 1px solid #293c56; border-radius: 9px;
+      outline: none; background: #091625; color: #f4f7fb; font: inherit;
+    }
+    input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .14); }
+    button {
+      border: 0; border-radius: 9px; padding: .72rem 1rem; cursor: pointer; color: white;
+      background: #1d4ed8; font-family: inherit; font-size: .9rem; font-weight: 650;
+      transition: transform .15s ease, filter .15s ease; justify-self: start;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    .secondary { border: 1px solid #31445e; background: #152337; color: #cbd8e8; }
+    .actions { display: flex; align-items: center; justify-content: space-between; gap: .7rem; flex-wrap: wrap; }
+    .order-actions { justify-content: flex-start; margin-top: .2rem; }
+    .console { margin-top: 1rem; }
+    pre {
+      min-height: 19rem; max-height: 34rem; margin: 1rem 0 0; padding: 1.1rem;
+      border: 1px solid #1f334c; border-radius: 12px; overflow: auto; background: #030a13;
+      color: #b8f3d1; font: .82rem/1.55 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    @media (max-width: 760px) {
+      main { padding: 1.5rem 0; }
+      .grid { grid-template-columns: 1fr; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
 <body>
-  <h1>Orders SignalR check</h1>
-  <label>User ID <input id="userId" value="demo-user"></label>
-  <button id="connect">Connect</button>
-  <button id="create" disabled>Create order</button>
-  <pre id="log"></pre>
+  <main>
+    <header>
+      <span class="badge">REST API · SignalR · Idempotency</span>
+      <h1>Консоль тестирования ордеров</h1>
+      <p class="lead">Создавайте ордера, проверяйте ответы API и наблюдайте обновления SignalR в реальном времени.</p>
+    </header>
+    <div class="grid">
+      <fieldset class="card">
+        <legend>Подключение</legend>
+        <label>Идентификатор пользователя <input id="userId" value="demo-user"></label>
+        <button id="connect">Подключиться</button>
+      </fieldset>
+      <fieldset class="card">
+        <legend>Параметры ордера</legend>
+        <label>Клиентский ID <input id="clientOrderId"></label>
+        <label>Торговый символ <input id="symbol" value="AAPL"></label>
+        <label>Цена <input id="price" type="number" step="0.01" value="225.50"></label>
+        <label>Объём <input id="volume" type="number" value="10"></label>
+        <div class="actions order-actions">
+          <button id="newId" class="secondary">Создать новый ID</button>
+          <button id="create" disabled>Создать ордер</button>
+        </div>
+      </fieldset>
+    </div>
+    <section class="card console">
+      <div class="actions">
+        <h2>События и ответы</h2>
+        <button id="clearLog" class="secondary">Очистить журнал</button>
+      </div>
+      <pre id="log">Журнал пока пуст. Подключитесь к SignalR, чтобы начать проверку.</pre>
+    </section>
+  </main>
   <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
   <script>
-    const log = value => document.querySelector('#log').textContent += `${JSON.stringify(value, null, 2)}\n`;
+    let hasLogEntries = false;
+    const log = value => {
+      const output = document.querySelector('#log');
+      if (!hasLogEntries) output.textContent = '';
+      output.textContent += `${JSON.stringify(value, null, 2)}\n`;
+      hasLogEntries = true;
+    };
+    const generateClientOrderId = () => document.querySelector('#clientOrderId').value = crypto.randomUUID();
     let connection;
+
+    generateClientOrderId();
+    document.querySelector('#newId').onclick = generateClientOrderId;
+    document.querySelector('#clearLog').onclick = () => {
+      document.querySelector('#log').textContent = '';
+      hasLogEntries = true;
+    };
 
     document.querySelector('#connect').onclick = async () => {
       const userId = document.querySelector('#userId').value;
@@ -18,26 +125,35 @@
         .withUrl(`/hub/orders?userId=${encodeURIComponent(userId)}`)
         .withAutomaticReconnect()
         .build();
-      connection.on('ReceiveInitialOrders', orders => log({ initial: orders }));
-      connection.on('ReceiveOrderUpdate', order => log({ update: order }));
-      await connection.start();
-      document.querySelector('#create').disabled = false;
-      log('connected');
+      connection.on('ReceiveInitialOrders', orders => log({ событие: 'Начальный список ордеров', ордеры: orders }));
+      connection.on('ReceiveOrderUpdate', order => log({ событие: 'Обновление ордера', ордер: order }));
+      try {
+        await connection.start();
+        document.querySelector('#create').disabled = false;
+        log({ подключение: 'SignalR-соединение установлено' });
+      } catch (error) {
+        log({ ошибкаПодключения: error.message });
+      }
     };
 
     document.querySelector('#create').onclick = async () => {
       const userId = document.querySelector('#userId').value;
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
-        body: JSON.stringify({
-          clientOrderId: crypto.randomUUID(),
-          symbol: 'AAPL',
-          price: 225.50,
-          volume: 10
-        })
-      });
-      log({ rest: await response.json() });
+      try {
+        const response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+          body: JSON.stringify({
+            clientOrderId: document.querySelector('#clientOrderId').value,
+            symbol: document.querySelector('#symbol').value,
+            price: Number(document.querySelector('#price').value),
+            volume: Number(document.querySelector('#volume').value)
+          })
+        });
+        const body = await response.json();
+        log({ httpКод: response.status, успешно: response.ok, ответ: body });
+      } catch (error) {
+        log({ ошибкаЗапроса: error.message });
+      }
     };
   </script>
 </body>
