@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.SignalR;
 namespace OrderRealtime.Api.Orders;
 
 [Authorize]
-public sealed class OrdersHub(IOrderService orderService) : Hub<IOrderClient>
+public sealed class OrdersHub(
+    IOrderService orderService,
+    ILogger<OrdersHub> logger) : Hub<IOrderClient>
 {
     public override async Task OnConnectedAsync()
     {
@@ -15,6 +17,9 @@ public sealed class OrdersHub(IOrderService orderService) : Hub<IOrderClient>
         // Группа объединяет все вкладки и устройства одного пользователя.
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId));
         await Clients.Caller.ReceiveInitialOrders(orderService.GetActiveOrders(userId));
+        logger.LogInformation(
+            "SignalR connection {ConnectionId} joined order group for user {UserId}",
+            Context.ConnectionId, userId);
         await base.OnConnectedAsync();
     }
 

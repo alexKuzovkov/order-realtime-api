@@ -10,22 +10,41 @@ namespace OrderRealtime.Api.Orders;
 public sealed class OrdersController(IOrderService orderService) : ControllerBase
 {
     [HttpGet("active")]
-    public ActionResult<IReadOnlyCollection<OrderDto>> GetActiveOrders()
+    [ProducesResponseType<IReadOnlyCollection<OrderResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
+    public ActionResult<IReadOnlyCollection<OrderResponse>> GetActiveOrders()
     {
         var userId = GetUserId();
         return Ok(orderService.GetActiveOrders(userId));
     }
 
     [HttpPost]
-    [ProducesResponseType<OrderDto>(StatusCodes.Status201Created)]
-    public async Task<ActionResult<OrderDto>> CreateOrderAsync(
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OrderResponse>> CreateOrderAsync(
         [FromBody] CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
 
-        var order = await orderService.CreateOrderAsync(userId, request, cancellationToken);
-        return Created($"/api/orders/{order.Id}", order);
+        var result = await orderService.CreateOrderAsync(
+            new CreateOrderCommand(
+                userId,
+                request.ClientOrderId,
+                request.Symbol,
+                request.Price,
+                request.Volume),
+            cancellationToken);
+
+        return result.WasCreated
+            ? Created($"/api/orders/{result.Order.Id}", result.Order)
+            : Ok(result.Order);
     }
 
     private string GetUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier)

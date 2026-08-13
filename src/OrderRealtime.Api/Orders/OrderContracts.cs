@@ -4,6 +4,9 @@ namespace OrderRealtime.Api.Orders;
 
 public sealed record CreateOrderRequest
 {
+    [Required, StringLength(100, MinimumLength = 8)]
+    public required string ClientOrderId { get; init; }
+
     [Required, StringLength(20, MinimumLength = 1)]
     [RegularExpression(@"^[A-Za-z0-9._/-]+$")]
     public required string Symbol { get; init; }
@@ -16,8 +19,9 @@ public sealed record CreateOrderRequest
     public int Volume { get; init; }
 }
 
-public sealed record OrderDto(
+public sealed record OrderResponse(
     Guid Id,
+    string ClientOrderId,
     string Symbol,
     decimal Price,
     int Volume,
@@ -26,6 +30,6 @@ public sealed record OrderDto(
 
 public interface IOrderClient
 {
-    Task ReceiveOrderUpdate(OrderDto order);
-    Task ReceiveInitialOrders(IReadOnlyCollection<OrderDto> orders);
+    Task ReceiveOrderUpdate(OrderResponse order);
+    Task ReceiveInitialOrders(IReadOnlyCollection<OrderResponse> orders);
 }

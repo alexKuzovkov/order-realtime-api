@@ -1,11 +1,16 @@
 using Microsoft.Extensions.Options;
+using System.ComponentModel.DataAnnotations;
 
 namespace OrderRealtime.Api.Orders;
 
 public sealed class OrderExpirationOptions
 {
     public const string SectionName = "OrderExpiration";
+
+    [Range(1, 86_400)]
     public int LifetimeSeconds { get; init; } = 15;
+
+    [Range(1, 3_600)]
     public int ScanIntervalSeconds { get; init; } = 1;
 }
 
