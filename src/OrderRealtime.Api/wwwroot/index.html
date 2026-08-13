@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Orders SignalR check</title></head>
+<body>
+  <h1>Orders SignalR check</h1>
+  <label>User ID <input id="userId" value="demo-user"></label>
+  <button id="connect">Connect</button>
+  <button id="create" disabled>Create order</button>
+  <pre id="log"></pre>
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+  <script>
+    const log = value => document.querySelector('#log').textContent += `${JSON.stringify(value, null, 2)}\n`;
+    let connection;
+
+    document.querySelector('#connect').onclick = async () => {
+      const userId = document.querySelector('#userId').value;
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl(`/hub/orders?userId=${encodeURIComponent(userId)}`)
+        .withAutomaticReconnect()
+        .build();
+      connection.on('ReceiveInitialOrders', orders => log({ initial: orders }));
+      connection.on('ReceiveOrderUpdate', order => log({ update: order }));
+      await connection.start();
+      document.querySelector('#create').disabled = false;
+      log('connected');
+    };
+
+    document.querySelector('#create').onclick = async () => {
+      const userId = document.querySelector('#userId').value;
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+        body: JSON.stringify({ symbol: 'AAPL', price: 225.50, volume: 10 })
+      });
+      log({ rest: await response.json() });
+    };
+  </script>
+</body>
+</html>
