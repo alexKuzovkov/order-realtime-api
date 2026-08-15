@@ -14,7 +14,7 @@ public sealed class OrdersHub(
         var userId = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new HubException("Authenticated user identifier is missing.");
 
-        // Группа объединяет все вкладки и устройства одного пользователя.
+        // One group contains all browser tabs and devices belonging to the same user.
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId));
         await Clients.Caller.ReceiveInitialOrders(orderService.GetActiveOrders(userId));
         logger.LogInformation(

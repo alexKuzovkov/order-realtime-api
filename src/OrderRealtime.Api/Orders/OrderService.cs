@@ -14,7 +14,8 @@ public interface IOrderService
     Task<CreateOrderResult> CreateOrderAsync(
         CreateOrderCommand command, CancellationToken cancellationToken);
 
-    Task<bool> CancelOrderAsync(Order order, CancellationToken cancellationToken);
+    Task<bool> DeactivateOrderAsync(Order order, CancellationToken cancellationToken);
+    OrderResponse? GetOrder(string userId, Guid orderId);
     IReadOnlyCollection<OrderResponse> GetActiveOrders(string userId);
 }
 
@@ -44,10 +45,11 @@ public sealed class OrderService(
             command.Price,
             command.Volume,
             timeProvider.GetUtcNow());
+
         await businessValidator.ValidateAsync(command, cancellationToken);
         var addResult = store.GetOrAdd(candidate);
-
         var response = addResult.Order.ToResponse();
+
         if (!addResult.WasAdded)
         {
             if (!addResult.Order.HasSameTerms(symbol, command.Price, command.Volume))
@@ -61,24 +63,29 @@ public sealed class OrderService(
 
         await notifier.NotifyOrderUpdatedAsync(command.UserId, response, cancellationToken);
         logger.LogInformation(
-            "Order {OrderId} created; UserId: {UserId}; ClientOrderId: {ClientOrderId}",
-            response.Id, command.UserId, command.ClientOrderId);
+            "Order {OrderId} created in state {OrderState}; UserId: {UserId}; ClientOrderId: {ClientOrderId}",
+            response.Id, response.State, command.UserId, command.ClientOrderId);
 
         return new CreateOrderResult(response, true);
     }
 
-    public async Task<bool> CancelOrderAsync(
+    public async Task<bool> DeactivateOrderAsync(
         Order order, CancellationToken cancellationToken)
     {
-        if (!order.TryCancel()) return false;
+        if (!order.TryDeactivate()) return false;
 
+        var response = order.ToResponse();
         await notifier.NotifyOrderUpdatedAsync(
-            order.UserId, order.ToResponse(), cancellationToken);
+            order.UserId, response, cancellationToken);
         logger.LogInformation(
-            "Order {OrderId} cancelled; UserId: {UserId}", order.Id, order.UserId);
+            "Order {OrderId} transitioned to {OrderState}; UserId: {UserId}",
+            order.Id, response.State, order.UserId);
 
         return true;
     }
+
+    public OrderResponse? GetOrder(string userId, Guid orderId) =>
+        store.GetById(userId, orderId)?.ToResponse();
 
     public IReadOnlyCollection<OrderResponse> GetActiveOrders(string userId) =>
         [.. store.GetActiveByUser(userId).Select(order => order.ToResponse())];

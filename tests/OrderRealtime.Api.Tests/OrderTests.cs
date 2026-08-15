@@ -5,15 +5,46 @@ namespace OrderRealtime.Api.Tests;
 public sealed class OrderTests
 {
     [Fact]
-    public async Task TryCancel_AllowsOnlyOneConcurrentCancellation()
+    public void Create_StartsInActiveState()
+    {
+        var order = TestOrder.Create();
+
+        Assert.Equal(OrderState.Active, order.State);
+    }
+
+    [Fact]
+    public async Task TryDeactivate_AllowsOnlyOneConcurrentTransition()
     {
         var order = TestOrder.Create();
 
         var attempts = await Task.WhenAll(
-            Enumerable.Range(0, 20).Select(_ => Task.Run(order.TryCancel)));
+            Enumerable.Range(0, 20).Select(_ => Task.Run(order.TryDeactivate)));
 
         Assert.Single(attempts, result => result);
-        Assert.False(order.IsActive);
+        Assert.Equal(OrderState.Inactive, order.State);
+    }
+
+    [Theory]
+    [InlineData(OrderState.Completed)]
+    [InlineData(OrderState.Inactive)]
+    [InlineData(OrderState.Faulted)]
+    public void TerminalState_CannotBeChangedAgain(OrderState terminalState)
+    {
+        var order = TestOrder.Create();
+        var firstTransition = terminalState switch
+        {
+            OrderState.Completed => order.TryComplete(),
+            OrderState.Inactive => order.TryDeactivate(),
+            OrderState.Faulted => order.TryMarkFaulted(),
+            _ => throw new ArgumentOutOfRangeException(nameof(terminalState))
+        };
+
+        Assert.True(firstTransition);
+        Assert.Equal(terminalState, order.State);
+        Assert.False(order.TryComplete());
+        Assert.False(order.TryDeactivate());
+        Assert.False(order.TryMarkFaulted());
+        Assert.Equal(terminalState, order.State);
     }
 
     [Theory]

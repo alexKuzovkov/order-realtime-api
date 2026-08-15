@@ -26,7 +26,7 @@ public sealed record OrderResponse(
     decimal Price,
     int Volume,
     DateTimeOffset CreatedAt,
-    bool IsActive);
+    OrderState State);
 
 public interface IOrderClient
 {

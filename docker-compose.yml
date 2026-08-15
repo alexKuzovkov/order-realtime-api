@@ -23,8 +23,13 @@ x-api: &api
 services:
   api-1:
     <<: *api
+    ports:
+      - "5001:8080"
+
   api-2:
     <<: *api
+    ports:
+      - "5002:8080"
 
   redis:
     image: redis:7.4-alpine

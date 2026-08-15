@@ -1,8 +1,16 @@
 namespace OrderRealtime.Api.Orders;
 
+public enum OrderState
+{
+    Active = 1,
+    Completed = 2,
+    Inactive = 3,
+    Faulted = 4
+}
+
 public sealed class Order
 {
-    private int _isActive = 1;
+    private int _state = (int)OrderState.Active;
 
     private Order(
         Guid id,
@@ -29,7 +37,7 @@ public sealed class Order
     public int Volume { get; }
     public string UserId { get; }
     public DateTimeOffset CreatedAt { get; }
-    public bool IsActive => Volatile.Read(ref _isActive) == 1;
+    public OrderState State => (OrderState)Volatile.Read(ref _state);
 
     public static Order Create(
         Guid id,
@@ -58,10 +66,20 @@ public sealed class Order
     public bool HasSameTerms(string symbol, decimal price, int volume) =>
         Symbol == symbol && Price == price && Volume == volume;
 
-    public bool TryCancel() => Interlocked.Exchange(ref _isActive, 0) == 1;
+    public bool TryComplete() => TryTransitionFromActive(OrderState.Completed);
+
+    public bool TryDeactivate() => TryTransitionFromActive(OrderState.Inactive);
+
+    public bool TryMarkFaulted() => TryTransitionFromActive(OrderState.Faulted);
+
+    private bool TryTransitionFromActive(OrderState targetState) =>
+        Interlocked.CompareExchange(
+            ref _state,
+            (int)targetState,
+            (int)OrderState.Active) == (int)OrderState.Active;
 
     public OrderResponse ToResponse() => new(
-        Id, ClientOrderId, Symbol, Price, Volume, CreatedAt, IsActive);
+        Id, ClientOrderId, Symbol, Price, Volume, CreatedAt, State);
 }
 
 public sealed class DomainValidationException(string message) : Exception(message);
