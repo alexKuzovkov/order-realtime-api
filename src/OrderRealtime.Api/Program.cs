@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using OrderRealtime.Api.Authentication;
@@ -10,10 +12,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-var signalR = builder.Services.AddSignalR();
+
+var signalR = builder.Services
+    .AddSignalR()
+    .AddJsonProtocol(options =>
+        options.PayloadSerializerOptions.Converters.Add(
+            new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
+
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrWhiteSpace(redisConnection))
 {
@@ -26,14 +39,16 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
 
     signalR.AddStackExchangeRedis(options => options.Configuration = redisOptions);
 }
+
 builder.Services.AddMemoryCache();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks();
-// Только для самодостаточного demo: production-инстансы должны разделять постоянный key ring.
+
+// This keeps the demo self-contained. Production instances must share a persistent key ring.
 builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 
-// Демонстрационная схема. В production заменяется на AddJwtBearer().
+// Demo authentication. Replace with JWT Bearer / OIDC in production.
 builder.Services.AddAuthentication(DemoAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, DemoAuthenticationHandler>(
         DemoAuthenticationHandler.SchemeName, _ => { });
@@ -47,6 +62,7 @@ builder.Services.AddOptions<OrderLimitsOptions>()
     .BindConfiguration(OrderLimitsOptions.SectionName)
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
 builder.Services.AddSingleton<IOrderStore, MemoryOrderStore>();
 builder.Services.AddSingleton<IOrderUpdateNotifier, SignalROrderUpdateNotifier>();
 builder.Services.AddSingleton<IOrderBusinessValidator, OrderBusinessValidator>();

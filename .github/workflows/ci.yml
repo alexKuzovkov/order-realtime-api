@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore OrderRealtime.sln
+
+      - name: Build
+        run: dotnet build OrderRealtime.sln -c Release --no-restore
+
+      - name: Run unit tests
+        run: dotnet test OrderRealtime.sln -c Release --no-build
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+  powershell-end-to-end:
+    runs-on: ubuntu-latest
+    needs: build-and-unit-test
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run full PowerShell E2E suite
+        shell: pwsh
+        run: ./test_all.ps1 -StartServices
+
+      - name: Print container status on failure
+        if: failure()
+        run: docker compose ps -a
+
+      - name: Print container logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=400
+
+      - name: Clean up Docker resources
+        if: always()
+        run: docker compose down -v --remove-orphans

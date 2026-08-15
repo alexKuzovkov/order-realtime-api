@@ -32,8 +32,13 @@ public sealed class OrderExpirationService(
         {
             foreach (var order in store.GetExpired(timeProvider.GetUtcNow(), lifetime))
             {
-                if (await orderService.CancelOrderAsync(order, stoppingToken))
-                    logger.LogInformation("Order {OrderId} expired and was cancelled", order.Id);
+                if (await orderService.DeactivateOrderAsync(order, stoppingToken))
+                {
+                    logger.LogInformation(
+                        "Order {OrderId} expired and transitioned to {OrderState}",
+                        order.Id,
+                        OrderState.Inactive);
+                }
             }
         }
     }

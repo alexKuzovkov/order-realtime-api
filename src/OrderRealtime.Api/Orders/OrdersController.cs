@@ -19,6 +19,25 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         return Ok(orderService.GetActiveOrders(userId));
     }
 
+    [HttpGet("{orderId:guid}")]
+    [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public ActionResult<OrderResponse> GetOrderById(Guid orderId)
+    {
+        var userId = GetUserId();
+        var order = orderService.GetOrder(userId, orderId);
+
+        return order is null
+            ? NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Order not found",
+                Detail = $"Order '{orderId}' was not found for the authenticated user."
+            })
+            : Ok(order);
+    }
+
     [HttpPost]
     [ProducesResponseType<OrderResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<OrderResponse>(StatusCodes.Status201Created)]
@@ -43,7 +62,10 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
             cancellationToken);
 
         return result.WasCreated
-            ? Created($"/api/orders/{result.Order.Id}", result.Order)
+            ? CreatedAtAction(
+                nameof(GetOrderById),
+                new { orderId = result.Order.Id },
+                result.Order)
             : Ok(result.Order);
     }
 

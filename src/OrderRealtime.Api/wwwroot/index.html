@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Проверка ордеров и SignalR</title>
+  <title>Order & SignalR Test Console</title>
   <style>
     :root {
       color-scheme: dark;
@@ -70,34 +70,34 @@
 <body>
   <main>
     <header>
-      <span class="badge">REST API · SignalR · Idempotency</span>
-      <h1>Консоль тестирования ордеров</h1>
-      <p class="lead">Создавайте ордера, проверяйте ответы API и наблюдайте обновления SignalR в реальном времени.</p>
+      <span class="badge">REST API · SignalR · Idempotency · OrderState</span>
+      <h1>Order Realtime Test Console</h1>
+      <p class="lead">Create orders, inspect API responses, and observe real-time SignalR updates including order state transitions.</p>
     </header>
     <div class="grid">
       <fieldset class="card">
-        <legend>Подключение</legend>
-        <label>Идентификатор пользователя <input id="userId" value="demo-user"></label>
-        <button id="connect">Подключиться</button>
+        <legend>Connection</legend>
+        <label>User ID <input id="userId" value="demo-user"></label>
+        <button id="connect">Connect</button>
       </fieldset>
       <fieldset class="card">
-        <legend>Параметры ордера</legend>
-        <label>Клиентский ID <input id="clientOrderId"></label>
-        <label>Торговый символ <input id="symbol" value="AAPL"></label>
-        <label>Цена <input id="price" type="number" step="0.01" value="225.50"></label>
-        <label>Объём <input id="volume" type="number" value="10"></label>
+        <legend>Order parameters</legend>
+        <label>Client order ID <input id="clientOrderId"></label>
+        <label>Trading symbol <input id="symbol" value="AAPL"></label>
+        <label>Price <input id="price" type="number" step="0.01" value="225.50"></label>
+        <label>Volume <input id="volume" type="number" value="10"></label>
         <div class="actions order-actions">
-          <button id="newId" class="secondary">Создать новый ID</button>
-          <button id="create" disabled>Создать ордер</button>
+          <button id="newId" class="secondary">Generate new ID</button>
+          <button id="create" disabled>Create order</button>
         </div>
       </fieldset>
     </div>
     <section class="card console">
       <div class="actions">
-        <h2>События и ответы</h2>
-        <button id="clearLog" class="secondary">Очистить журнал</button>
+        <h2>Events and responses</h2>
+        <button id="clearLog" class="secondary">Clear log</button>
       </div>
-      <pre id="log">Журнал пока пуст. Подключитесь к SignalR, чтобы начать проверку.</pre>
+      <pre id="log">The log is empty. Connect to SignalR to start testing.</pre>
     </section>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
@@ -125,14 +125,14 @@
         .withUrl(`/hub/orders?userId=${encodeURIComponent(userId)}`)
         .withAutomaticReconnect()
         .build();
-      connection.on('ReceiveInitialOrders', orders => log({ событие: 'Начальный список ордеров', ордеры: orders }));
-      connection.on('ReceiveOrderUpdate', order => log({ событие: 'Обновление ордера', ордер: order }));
+      connection.on('ReceiveInitialOrders', orders => log({ event: 'Initial orders', orders }));
+      connection.on('ReceiveOrderUpdate', order => log({ event: 'Order update', order }));
       try {
         await connection.start();
         document.querySelector('#create').disabled = false;
-        log({ подключение: 'SignalR-соединение установлено' });
+        log({ connection: 'SignalR connection established' });
       } catch (error) {
-        log({ ошибкаПодключения: error.message });
+        log({ connectionError: error.message });
       }
     };
 
@@ -150,9 +150,9 @@
           })
         });
         const body = await response.json();
-        log({ httpКод: response.status, успешно: response.ok, ответ: body });
+        log({ httpStatus: response.status, success: response.ok, response: body });
       } catch (error) {
-        log({ ошибкаЗапроса: error.message });
+        log({ requestError: error.message });
       }
     };
   </script>

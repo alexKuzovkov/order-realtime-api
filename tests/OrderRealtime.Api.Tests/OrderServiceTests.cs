@@ -28,13 +28,15 @@ public sealed class OrderServiceTests
         Assert.True(result.WasCreated);
         Assert.Equal("AAPL", result.Order.Symbol);
         Assert.Equal(Now, result.Order.CreatedAt);
+        Assert.Equal(OrderState.Active, result.Order.State);
         store.Received(1).GetOrAdd(Arg.Is<Order>(order =>
             order.UserId == command.UserId &&
             order.ClientOrderId == command.ClientOrderId &&
             order.Symbol == "AAPL"));
         await notifier.Received(1).NotifyOrderUpdatedAsync(
             command.UserId,
-            Arg.Is<OrderResponse>(order => order.Id == result.Order.Id && order.IsActive),
+            Arg.Is<OrderResponse>(order =>
+                order.Id == result.Order.Id && order.State == OrderState.Active),
             Arg.Any<CancellationToken>());
     }
 
@@ -83,7 +85,7 @@ public sealed class OrderServiceTests
     }
 
     [Fact]
-    public async Task CancelOrderAsync_NotifiesExactlyOnce_WhenCalledConcurrently()
+    public async Task DeactivateOrderAsync_NotifiesExactlyOnce_WhenCalledConcurrently()
     {
         var store = Substitute.For<IOrderStore>();
         var notifier = Substitute.For<IOrderUpdateNotifier>();
@@ -95,13 +97,30 @@ public sealed class OrderServiceTests
 
         var results = await Task.WhenAll(
             Enumerable.Range(0, 10)
-                .Select(_ => service.CancelOrderAsync(order, CancellationToken.None)));
+                .Select(_ => service.DeactivateOrderAsync(order, CancellationToken.None)));
 
         Assert.Single(results, result => result);
+        Assert.Equal(OrderState.Inactive, order.State);
         await notifier.Received(1).NotifyOrderUpdatedAsync(
             order.UserId,
-            Arg.Is<OrderResponse>(update => update.Id == order.Id && !update.IsActive),
+            Arg.Is<OrderResponse>(update =>
+                update.Id == order.Id && update.State == OrderState.Inactive),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void GetOrder_ReturnsResponseForOwnerOnly()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var store = new MemoryOrderStore(cache);
+        var order = store.GetOrAdd(TestOrder.Create("user-1", Now)).Order;
+        var service = CreateService(store, Substitute.For<IOrderUpdateNotifier>());
+
+        var ownerResult = Assert.IsType<OrderResponse>(service.GetOrder("user-1", order.Id));
+        var otherUserResult = service.GetOrder("user-2", order.Id);
+
+        Assert.Equal(OrderState.Active, ownerResult.State);
+        Assert.Null(otherUserResult);
     }
 
     private static OrderService CreateService(

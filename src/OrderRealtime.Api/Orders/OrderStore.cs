@@ -6,6 +6,7 @@ namespace OrderRealtime.Api.Orders;
 public interface IOrderStore
 {
     OrderAddResult GetOrAdd(Order order);
+    Order? GetById(string userId, Guid orderId);
     IReadOnlyCollection<Order> GetActiveByUser(string userId);
     IReadOnlyCollection<Order> GetExpired(DateTimeOffset now, TimeSpan lifetime);
 }
@@ -14,7 +15,7 @@ public sealed record OrderAddResult(Order Order, bool WasAdded);
 
 public sealed class MemoryOrderStore(IMemoryCache cache) : IOrderStore
 {
-    private const string CacheKey = "active-orders";
+    private const string CacheKey = "orders";
 
     private ConcurrentDictionary<(string UserId, string ClientOrderId), Order> Orders => cache.GetOrCreate(
         CacheKey,
@@ -31,10 +32,15 @@ public sealed class MemoryOrderStore(IMemoryCache cache) : IOrderStore
         return new OrderAddResult(stored, ReferenceEquals(stored, order));
     }
 
+    public Order? GetById(string userId, Guid orderId) =>
+        Orders.Values.FirstOrDefault(order =>
+            order.Id == orderId && order.UserId == userId);
+
     public IReadOnlyCollection<Order> GetActiveByUser(string userId) =>
-        [.. Orders.Values.Where(order => order.IsActive && order.UserId == userId)];
+        [.. Orders.Values.Where(order =>
+            order.State == OrderState.Active && order.UserId == userId)];
 
     public IReadOnlyCollection<Order> GetExpired(DateTimeOffset now, TimeSpan lifetime) =>
         [.. Orders.Values.Where(order =>
-            order.IsActive && now - order.CreatedAt >= lifetime)];
+            order.State == OrderState.Active && now - order.CreatedAt >= lifetime)];
 }
